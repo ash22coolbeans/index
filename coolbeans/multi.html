@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Multiplayer Snake</title>
+
+<style>
+body {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #f0f0f0;
+}
+
+canvas {
+  border: 2px solid black;
+}
+
+#scoreboard {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-family: Arial;
+  background: white;
+  padding: 10px;
+  border: 1px solid black;
+}
+</style>
+</head>
+
+<body>
+
+<div id="scoreboard"></div>
+<canvas id="gameCanvas" width="700" height="700"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const gridSize = 20;
+
+const socket = new WebSocket("https://snake-server-bdfg.onrender.com");
+
+let playerId = null;
+let players = {};
+let food = null;
+let scores = {};
+
+// USERNAME (FIXED RELIABILITY)
+let name = prompt("Enter username:");
+if (!name) name = "Player";
+
+// IMPORTANT: wait for INIT before sending name
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "init") {
+    playerId = data.id;
+
+    setTimeout(() => {
+      socket.send(JSON.stringify({
+        type: "name",
+        name: name
+      }));
+    }, 50);
+  }
+
+  if (data.type === "state") {
+    players = data.players;
+    food = data.food;
+    scores = data.scores;
+    draw();
+  }
+};
+
+// CONTROLS
+document.addEventListener("keydown", (e) => {
+  socket.send(JSON.stringify({
+    type: "dir",
+    key: e.key
+  }));
+});
+
+// MOBILE SWIPE
+let sx = 0;
+let sy = 0;
+
+document.addEventListener("touchstart", (e) => {
+  sx = e.touches[0].clientX;
+  sy = e.touches[0].clientY;
+});
+
+document.addEventListener("touchend", (e) => {
+  let dx = e.changedTouches[0].clientX - sx;
+  let dy = e.changedTouches[0].clientY - sy;
+
+  let key = "";
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    key = dx > 0 ? "ArrowRight" : "ArrowLeft";
+  } else {
+    key = dy > 0 ? "ArrowDown" : "ArrowUp";
+  }
+
+  socket.send(JSON.stringify({
+    type: "dir",
+    key
+  }));
+});
+
+// DRAW GAME
+function draw() {
+  ctx.fillStyle = "#f0f0f0";
+  ctx.fillRect(0, 0, 700, 700);
+
+  // FOOD
+  if (food) {
+    ctx.fillStyle = "red";
+    ctx.fillRect(food.x, food.y, gridSize, gridSize);
+  }
+
+  // SNAKES
+  for (let id in players) {
+    const p = players[id];
+
+    ctx.fillStyle = p.color;
+
+    for (let seg of p.snake) {
+      ctx.fillRect(seg.x, seg.y, gridSize, gridSize);
+    }
+
+    // NAME (FIXED SAFE DISPLAY)
+    ctx.fillStyle = "black";
+    const displayName = p.name || "Player";
+    ctx.fillText(displayName, p.snake[0].x, p.snake[0].y - 5);
+  }
+
+  // LEADERBOARD
+  let board = document.getElementById("scoreboard");
+
+  let list = Object.keys(scores)
+    .map(id => ({
+      name: players[id]?.name || "Player",
+      score: scores[id] || 0
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  board.innerHTML =
+    "<b>Leaderboard</b><br>" +
+    list.map(p => `${p.name}: ${p.score}`).join("<br>");
+}
+</script>
+
+</body>
+</html>
